@@ -167,7 +167,11 @@ class t_go_generator : public t_concat_generator {
       t_service* tservice,
       t_function* tfunction);
   void generate_process_function(t_service* tservice, t_function* tfunction);
-  void generate_process_concurrent_function(
+  void generate_run_function(t_service* tservice, t_function* tfunction);
+  void generate_read_function(
+      t_service* tservice,
+      t_function* tfunction);
+  void generate_write_function(
       t_service* tservice,
       t_function* tfunction);
 
@@ -867,7 +871,7 @@ string t_go_generator::go_imports_begin() {
       "\t\"bytes\"\n"
       "\t\"sync\"\n"
       "\t\"fmt\"\n"
-      "\t\"" +
+      "\tthrift \"" +
       gen_thrift_import_ + "\"\n");
 }
 
@@ -2503,8 +2507,6 @@ void t_go_generator::generate_service_client_threadsafe(t_service* tservice) {
 }
 
 /**
-
-/**
  * Generates a command line tool for making remote requests
  *
  * @param tservice The service to generate a remote for.
@@ -2546,8 +2548,8 @@ void t_go_generator::generate_service_remote(t_service* tservice) {
   f_remote << indent() << "        \"os\"" << endl;
   f_remote << indent() << "        \"strconv\"" << endl;
   f_remote << indent() << "        \"strings\"" << endl;
-  f_remote << indent() << "        \"" + gen_thrift_import_ + "\"" << endl;
-  f_remote << indent() << "        \"" << service_module << "\"" << endl;
+  f_remote << indent() << "        thrift \"" + gen_thrift_import_ + "\"" << endl;
+  f_remote << indent() << "        \"../../" << service_module << "\"" << endl;
   f_remote << indent() << ")" << endl;
   f_remote << indent() << endl;
   f_remote << indent() << "func Usage() {" << endl;
@@ -2605,7 +2607,7 @@ void t_go_generator::generate_service_remote(t_service* tservice) {
   f_remote << indent() << "flag.Usage = Usage" << endl;
   f_remote
       << indent()
-      << "flag.StringVar(&host, \"h\", \"localhost\", \"Specify host and port\")"
+      << "flag.StringVar(&host, \"h\", \"localhost\", \"Specify host\")"
       << endl;
   f_remote << indent() << "flag.IntVar(&port, \"p\", 9090, \"Specify port\")"
            << endl;
@@ -2654,7 +2656,7 @@ void t_go_generator::generate_service_remote(t_service* tservice) {
   f_remote << indent() << "var err error" << endl;
   f_remote << indent() << "if useHttp {" << endl;
   f_remote << indent()
-           << "  trans, err = thrift.NewHttpClient(parsedUrl.String())" << endl;
+           << "  trans, err = thrift.NewHTTPPostClient(parsedUrl.String())" << endl;
   f_remote << indent() << "} else {" << endl;
   f_remote << indent() << "  portStr := fmt.Sprint(port)" << endl;
   f_remote << indent() << "  if strings.Contains(host, \":\") {" << endl;
@@ -2669,7 +2671,7 @@ void t_go_generator::generate_service_remote(t_service* tservice) {
   f_remote << indent() << "         }" << endl;
   f_remote << indent() << "  }" << endl;
   f_remote << indent()
-           << "  trans, err = thrift.NewSocket(net.JoinHostPort(host, portStr))"
+           << "  trans, err = thrift.NewSocket(thrift.SocketAddr(net.JoinHostPort(host, portStr)))"
            << endl;
   f_remote << indent() << "  if err != nil {" << endl;
   f_remote << indent()
@@ -3043,10 +3045,6 @@ void t_go_generator::generate_service_server(t_service* tservice) {
                << endl;
     f_service_ << indent()
                << "  processorMap map[string]thrift.ProcessorFunction" << endl;
-    f_service_
-        << indent()
-        << "  concurrentProcessorMap map[string]thrift.ConcurrentProcessorFunction"
-        << endl;
     f_service_ << indent() << "  handler " << serviceName << endl;
     f_service_ << indent() << "}" << endl << endl;
 
@@ -3056,31 +3054,13 @@ void t_go_generator::generate_service_server(t_service* tservice) {
         << endl;
     f_service_ << indent() << "  p.processorMap[key] = processor" << endl;
     f_service_ << indent() << "}" << endl << endl;
-    f_service_
-        << indent() << "func (p *" << serviceName
-        << "Processor) AddToConcurrentProcessorMap(key string, processor thrift.ConcurrentProcessorFunction) {"
-        << endl;
-    f_service_ << indent() << "  p.concurrentProcessorMap[key] = processor"
-               << endl;
-    f_service_ << indent() << "}" << endl << endl;
-
     f_service_ << indent() << "func (p *" << serviceName
                << "Processor) GetProcessorFunction(key string) "
-                  "(processor thrift.ProcessorFunction, ok bool) {"
+	       << "(processor thrift.ProcessorFunction, ok bool) {"
                << endl;
     f_service_ << indent() << "  processor, ok = p.processorMap[key]" << endl;
     f_service_ << indent() << "  return processor, ok" << endl;
     f_service_ << indent() << "}" << endl << endl;
-
-    f_service_ << indent() << "func (p *" << serviceName
-               << "Processor) GetConcurrentProcessorFunction(key string) "
-                  "(processor thrift.ConcurrentProcessorFunction, ok bool) {"
-               << endl;
-    f_service_ << indent() << "  processor, ok = p.concurrentProcessorMap[key]"
-               << endl;
-    f_service_ << indent() << "  return processor, ok" << endl;
-    f_service_ << indent() << "}" << endl << endl;
-
     f_service_
         << indent() << "func (p *" << serviceName
         << "Processor) ProcessorMap() map[string]thrift.ProcessorFunction {"
@@ -3093,7 +3073,6 @@ void t_go_generator::generate_service_server(t_service* tservice) {
     f_service_
         << indent() << "  " << self << " := &" << serviceName
         << "Processor{handler:handler, "
-           "concurrentProcessorMap:make(map[string]thrift.ConcurrentProcessorFunction),"
            "processorMap:make(map[string]thrift.ProcessorFunction)}"
         << endl;
 
@@ -3103,56 +3082,40 @@ void t_go_generator::generate_service_server(t_service* tservice) {
                  << escapedFuncName << "\"] = &" << pServiceName << "Processor"
                  << publicize((*f_iter)->get_name()) << "{handler:handler}"
                  << endl;
-      f_service_ << indent() << "  " << self << ".concurrentProcessorMap[\""
-                 << escapedFuncName << "\"] = &" << pServiceName << "Processor"
-                 << publicize((*f_iter)->get_name()) << "{handler:handler}"
-                 << endl;
     }
 
     string x(tmp("x"));
     f_service_ << indent() << "return " << self << endl;
     f_service_ << indent() << "}" << endl << endl;
 
-    // Emits serial and concurrent variations of process functions
-    for (int i = 0; i < 2; ++i) {
-      const char* concur = (i == 0) ? "" : "Concurrent";
-      f_service_ << indent() << "func (p *" << serviceName
-                 << "Processor) Process" << concur
-                 << "(iprot, oprot thrift.Protocol";
-      if (i == 1) {
-        f_service_ << ", locker sync.Locker";
-      }
-      f_service_ << ") (success bool, err thrift.Exception) {" << endl;
-      f_service_ << indent()
-                 << "  name, _, seqId, err := iprot.ReadMessageBegin()" << endl;
-      f_service_ << indent() << "  if err != nil { return false, err }" << endl;
-      f_service_ << indent() << "  if processor, ok := p.Get" << concur
-                 << "Processor"
-                 << "Function(name); ok {" << endl;
-      f_service_ << indent() << "    return processor.Process" << concur
-                 << "(seqId, iprot, oprot";
-      if (i == 1) {
-        f_service_ << ", locker";
-      }
-      f_service_ << ")" << endl;
-      f_service_ << indent() << "  }" << endl;
-      f_service_ << indent() << "  iprot.Skip(thrift.STRUCT)" << endl;
-      f_service_ << indent() << "  iprot.ReadMessageEnd()" << endl;
-      f_service_
-          << indent() << "  " << x
-          << " := thrift.NewApplicationException(thrift.UNKNOWN_METHOD, \"Unknown function "
-             "\" + name)"
-          << endl;
-      f_service_ << indent()
-                 << "  oprot.WriteMessageBegin(name, thrift.EXCEPTION, seqId)"
-                 << endl;
-      f_service_ << indent() << "  " << x << ".Write(oprot)" << endl;
-      f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
-      f_service_ << indent() << "  oprot.Flush()" << endl;
-      f_service_ << indent() << "  return false, " << x << endl;
-      f_service_ << indent() << "" << endl;
-      f_service_ << indent() << "}" << endl << endl;
-    }
+    f_service_ << indent() << "func (p *" << serviceName
+	       << "Processor) Process(iprot, oprot thrift.Protocol";
+    f_service_ << ") (success bool, err thrift.Exception) {" << endl;
+    f_service_ << indent()
+	       << "  name, _, seqId, err := iprot.ReadMessageBegin()" << endl;
+    f_service_ << indent() << "  if err != nil { return false, err }" << endl;
+    f_service_ << indent() << "  if processor, ok := p.Get"
+	       << "Processor"
+	       << "Function(name); ok {" << endl;
+    f_service_ << indent() << "    return processor.Process"
+	       << "(seqId, iprot, oprot)" << endl;
+    f_service_ << indent() << "  }" << endl;
+    f_service_ << indent() << "  iprot.Skip(thrift.STRUCT)" << endl;
+    f_service_ << indent() << "  iprot.ReadMessageEnd()" << endl;
+    f_service_
+      << indent() << "  " << x
+      << " := thrift.NewApplicationException(thrift.UNKNOWN_METHOD, \"Unknown function "
+      "\" + name)"
+      << endl;
+    f_service_ << indent()
+	       << "  oprot.WriteMessageBegin(name, thrift.EXCEPTION, seqId)"
+	       << endl;
+    f_service_ << indent() << "  " << x << ".Write(oprot)" << endl;
+    f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
+    f_service_ << indent() << "  oprot.Flush()" << endl;
+    f_service_ << indent() << "  return false, " << x << endl;
+    f_service_ << indent() << "" << endl;
+    f_service_ << indent() << "}" << endl << endl;
   } else {
     f_service_ << indent() << "type " << serviceName << "Processor struct {"
                << endl;
@@ -3169,11 +3132,6 @@ void t_go_generator::generate_service_server(t_service* tservice) {
                  << escapedFuncName << "\", &" << pServiceName << "Processor"
                  << publicize((*f_iter)->get_name()) << "{handler:handler})"
                  << endl;
-      f_service_ << indent() << "  " << self
-                 << ".AddToConcurrentProcessorMap(\"" << escapedFuncName
-                 << "\", &" << pServiceName << "Processor"
-                 << publicize((*f_iter)->get_name()) << "{handler:handler})"
-                 << endl;
     }
 
     f_service_ << indent() << "  return " << self << endl;
@@ -3184,7 +3142,9 @@ void t_go_generator::generate_service_server(t_service* tservice) {
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     generate_process_function_type(tservice, *f_iter);
     generate_process_function(tservice, *f_iter);
-    generate_process_concurrent_function(tservice, *f_iter);
+    generate_read_function(tservice, *f_iter);
+    generate_write_function(tservice, *f_iter);
+    generate_run_function(tservice, *f_iter);
   }
 
   f_service_ << endl;
@@ -3200,6 +3160,86 @@ void t_go_generator::generate_process_function_type(
   f_service_ << indent() << "}" << endl << endl;
 }
 
+void t_go_generator::generate_read_function(
+    t_service* tservice,
+    t_function* tfunction) {
+  // Open function
+  string processorName = privatize(tservice->get_name()) + "Processor" +
+      publicize(tfunction->get_name());
+  string argsname = publicize(tfunction->get_name() + "_args", true);
+  // t_struct* xs = tfunction->get_xceptions();
+  // const std::vector<t_field*>& xceptions = xs->get_members();
+  vector<t_field*>::const_iterator x_iter;
+  f_service_
+      << indent() << "func (p *" << processorName
+      << ") Read(seqId int32, iprot thrift.Protocol) "
+      << "(thrift.Struct, thrift.Exception) {"  << endl;
+  indent_up();
+  f_service_ << indent() << "args := " << argsname << "{}" << endl;
+  f_service_ << indent() << "if err := args.Read(iprot); err != nil {" << endl;
+  indent_up();
+  f_service_ << indent() << "return nil, err" << endl;
+  indent_down();
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent() << "iprot.ReadMessageEnd()" << endl;
+  f_service_ << indent() << "return &args, nil" << endl;
+  indent_down();
+  f_service_ << indent() << "}" << endl << endl;
+}
+
+void t_go_generator::generate_write_function(
+    t_service* tservice,
+    t_function* tfunction) {
+  // Open function
+  string processorName = privatize(tservice->get_name()) + "Processor" +
+      publicize(tfunction->get_name());
+  string argsname = publicize(tfunction->get_name() + "_args", true);
+  string resultname = publicize(tfunction->get_name() + "_result", true);
+  vector<t_field*>::const_iterator x_iter;
+  f_service_
+      << indent() << "func (p *" << processorName
+      << ") Write(seqId int32, result thrift.WritableStruct, oprot thrift.Protocol) (err "
+         "thrift.Exception) {"
+      << endl;
+  indent_up();
+  bool need_reference = type_need_reference(tfunction->get_returntype());
+
+  f_service_ << indent() << "var err2 error" << endl;
+  f_service_ << indent() << "messageType := thrift.REPLY" << endl;  
+  f_service_ << indent() << "if _, isError := result.(thrift.ApplicationException); isError {" << endl;
+  indent_up();
+  f_service_ << indent() << "messageType = thrift.EXCEPTION" << endl;
+  indent_down();
+  f_service_ << indent() << "}" << endl;
+
+  f_service_ << indent() << "if err2 = oprot.WriteMessageBegin(\""
+	     << escape_string(tfunction->get_name())
+	     << "\", messageType, seqId); err2 != nil {" << endl;
+  f_service_ << indent() << "  err = err2" << endl;
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent()
+	     << "if err2 = result.Write(oprot); err == nil && err2 != nil {"
+	     << endl;
+
+  f_service_ << indent() << "  err = err2" << endl;
+  f_service_ << indent() << "}" << endl;
+  f_service_
+    << indent()
+    << "if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {"
+    << endl;
+  f_service_ << indent() << "  err = err2" << endl;
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent()
+	     << "if err2 = oprot.Flush(); err == nil && err2 != nil {"
+	     << endl;
+  f_service_ << indent() << "  err = err2" << endl;
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent() << "return err" << endl;
+  indent_down();
+  f_service_ << indent() << "}" << endl << endl;
+}
+
+
 /**
  * Generates a process function definition.
  *
@@ -3209,169 +3249,58 @@ void t_go_generator::generate_process_function(
     t_service* tservice,
     t_function* tfunction) {
   // Open function
+  string fname = tfunction->get_name();
   string processorName = privatize(tservice->get_name()) + "Processor" +
-      publicize(tfunction->get_name());
+      publicize(fname);
   string argsname = publicize(tfunction->get_name() + "_args", true);
   string resultname = publicize(tfunction->get_name() + "_result", true);
-  // t_struct* xs = tfunction->get_xceptions();
-  // const std::vector<t_field*>& xceptions = xs->get_members();
-  vector<t_field*>::const_iterator x_iter;
   f_service_
       << indent() << "func (p *" << processorName
-      << ") Process(seqId int32, iprot, oprot thrift.Protocol) (success bool, err "
-         "thrift.Exception) {"
+      << ") Process(seqId int32, iprot, oprot thrift.Protocol) (bool, thrift.Exception) {"
       << endl;
   indent_up();
-  f_service_ << indent() << "args := " << argsname << "{}" << endl;
-  f_service_ << indent() << "if err = args.Read(iprot); err != nil {" << endl;
-  f_service_ << indent() << "  iprot.ReadMessageEnd()" << endl;
-  if (!tfunction->is_oneway()) {
-    f_service_
-        << indent()
-        << "  x := thrift.NewApplicationException(thrift.PROTOCOL_ERROR, err.Error())"
-        << endl;
-    f_service_ << indent() << "  oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.EXCEPTION, seqId)" << endl;
-    f_service_ << indent() << "  x.Write(oprot)" << endl;
-    f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
-    f_service_ << indent() << "  oprot.Flush()" << endl;
-  }
-  f_service_ << indent() << "  return false, err" << endl;
-  f_service_ << indent() << "}" << endl << endl;
-  f_service_ << indent() << "iprot.ReadMessageEnd()" << endl;
-
-  if (!tfunction->is_oneway()) {
-    f_service_ << indent() << "result := " << resultname << "{}" << endl;
-  }
-  bool need_reference = type_need_reference(tfunction->get_returntype());
-  if (!tfunction->is_oneway() && !tfunction->get_returntype()->is_void()) {
-    f_service_ << "var retval " << type_to_go_type(tfunction->get_returntype())
-               << endl;
-  }
-
-  f_service_ << indent() << "var err2 error" << endl;
-  f_service_ << indent() << "if ";
-
-  if (!tfunction->is_oneway()) {
-    if (!tfunction->get_returntype()->is_void()) {
-      f_service_ << "retval, ";
-    }
-  }
+  t_struct* arg_struct = tfunction->get_arglist();  
+  const std::vector<t_field*>& fields = arg_struct->get_members();
+  f_service_ << indent() << "request, readErr := p.Read(seqId, iprot)" << endl;
+  f_service_ << indent() << "if readErr != nil {" << endl;
+  indent_up();
+  f_service_ << indent() << "// request couldn't be read.  connection should be closed" 
+	     << endl;
+  f_service_ << indent() << "return false, readErr" << endl;
+  indent_down();
+  f_service_ << indent() << "}" << endl;
 
   // Generate the function call
-  t_struct* arg_struct = tfunction->get_arglist();
-  const std::vector<t_field*>& fields = arg_struct->get_members();
-  vector<t_field*>::const_iterator f_iter;
-  f_service_ << "err2 = p.handler." << publicize(tfunction->get_name()) << "(";
-  bool first = true;
-
-  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    if (first) {
-      first = false;
-    } else {
-      f_service_ << ", ";
-    }
-
-    f_service_ << "args." << publicize((*f_iter)->get_name());
-  }
-
-  f_service_ << "); err2 != nil {" << endl;
-
-  t_struct* exceptions = tfunction->get_xceptions();
-  const vector<t_field*>& x_fields = exceptions->get_members();
-  if (!x_fields.empty()) {
-    f_service_ << indent() << "switch v := err2.(type) {" << endl;
-
-    vector<t_field*>::const_iterator xf_iter;
-
-    for (xf_iter = x_fields.begin(); xf_iter != x_fields.end(); ++xf_iter) {
-      f_service_ << indent() << "  case "
-                 << type_to_go_type(((*xf_iter)->get_type())) << ":" << endl;
-      f_service_ << indent() << "result." << publicize((*xf_iter)->get_name())
-                 << " = v" << endl;
-    }
-
-    f_service_ << indent() << "  default:" << endl;
-  }
-
-  if (!tfunction->is_oneway()) {
-    f_service_
-        << indent()
-        << "  x := thrift.NewApplicationException(thrift.INTERNAL_ERROR, "
-           "\"Internal error processing "
-        << escape_string(tfunction->get_name()) << ": \" + err2.Error())"
-        << endl;
-    f_service_ << indent() << "  oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.EXCEPTION, seqId)" << endl;
-    f_service_ << indent() << "  x.Write(oprot)" << endl;
-    f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
-    f_service_ << indent() << "  oprot.Flush()" << endl;
-  }
-
-  f_service_ << indent() << "  return true, err2" << endl;
-
-  if (!x_fields.empty()) {
-    f_service_ << indent() << "}" << endl;
-  }
-
-  f_service_ << indent() << "}"; // closes err2 != nil
-
-  if (!tfunction->is_oneway()) {
-    if (!tfunction->get_returntype()->is_void()) {
-      f_service_ << " else {"
-                 << endl; // make sure we set Success retval only on success
-      indent_up();
-      f_service_ << indent() << "result.Success = ";
-      if (need_reference) {
-        f_service_ << "&";
-      }
-      f_service_ << "retval" << endl;
-      indent_down();
-      f_service_ << "}" << endl;
-    } else {
-      f_service_ << endl;
-    }
-    f_service_ << indent() << "if err2 = oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.REPLY, seqId); err2 != nil {" << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent()
-               << "if err2 = result.Write(oprot); err == nil && err2 != nil {"
-               << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_
-        << indent()
-        << "if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {"
-        << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent()
-               << "if err2 = oprot.Flush(); err == nil && err2 != nil {"
-               << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent() << "if err != nil {" << endl;
-    f_service_ << indent() << "  return" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent() << "return true, err" << endl;
-  } else {
-    f_service_ << endl;
-    f_service_ << indent() << "return true, nil" << endl;
-  }
+  f_service_ << indent() << "result, err := p.Run(seqId, request)" << endl;
+  f_service_ << indent() << "// when the client implemented handler fails, let's generate" << endl;
+  f_service_ << indent() << "// a good protocol conforming error and keep the connection open" << endl;
+  f_service_ << indent() << "if result == nil {" << endl;
+  indent_up();
+  f_service_ << indent() << "if err == nil {" << endl;
+  indent_up();
+  f_service_ << indent() << "exc := thrift.NewApplicationException(thrift.INTERNAL_ERROR, "
+	     << "\"error processing " << escape_string(fname) << ": nil result structure\")"
+	     << endl;
+  f_service_ << indent() << "err, result = exc, exc" << endl;  
+  indent_down();
+  f_service_ << indent() << "} else {" << endl;  
+  indent_up();
+  f_service_ << indent() << "result = err" << endl;
+  indent_down();  
+  f_service_ << indent() << "}" << endl;    
+  indent_down();
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent() << "if e2 := p.Write(seqId, result, oprot); e2 != nil {" << std::endl;
+  indent_up();
+  f_service_ << indent() << "return false, e2" << endl;  
+  indent_down();
+  f_service_ << indent() << "}" << endl;
+  f_service_ << indent() << "return true, err" << endl;
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
 }
 
-/**
- * Generates a process concurrent function definition.
- *
- * @param tfunction The function to write a dispatcher for
- */
-void t_go_generator::generate_process_concurrent_function(
+void t_go_generator::generate_run_function(
     t_service* tservice,
     t_function* tfunction) {
   // Open function
@@ -3379,54 +3308,19 @@ void t_go_generator::generate_process_concurrent_function(
       publicize(tfunction->get_name());
   string argsname = publicize(tfunction->get_name() + "_args", true);
   string resultname = publicize(tfunction->get_name() + "_result", true);
-
-  // emits ProcessConcurrent(), which reads the transport serially then spawns
-  // Handle()
   f_service_
       << indent() << "func (p *" << processorName
-      << ") ProcessConcurrent(seqId int32, iprot, oprot thrift.Protocol, locker sync.Locker)"
-         "(success bool, err thrift.Exception) {"
+      << ") Run(seqId int32, argStruct thrift.Struct) "
+      << "(thrift.WritableStruct, thrift.ApplicationException) {"
       << endl;
   indent_up();
-  f_service_ << indent() << "args := " << argsname << "{}" << endl;
-  f_service_ << indent() << "if err = args.Read(iprot); err != nil {" << endl;
-  f_service_ << indent() << "  iprot.ReadMessageEnd()" << endl;
-
-  if (!tfunction->is_oneway()) {
-    f_service_
-        << indent()
-        << "  x := thrift.NewApplicationException(thrift.PROTOCOL_ERROR, err.Error())"
-        << endl;
-    f_service_ << indent() << "  oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.EXCEPTION, seqId)" << endl;
-    f_service_ << indent() << "  x.Write(oprot)" << endl;
-    f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
-    f_service_ << indent() << "  oprot.Flush()" << endl;
-  }
-  f_service_ << indent() << "  return false, err" << endl;
-  f_service_ << indent() << "}" << endl << endl;
-  f_service_ << indent() << "iprot.ReadMessageEnd()" << endl;
-  f_service_ << indent() << "go p.Handle(seqId, oprot, locker, &args);" << endl;
-  f_service_ << indent() << "return true, nil" << endl;
-  f_service_ << indent() << "}" << endl << endl;
-
-  // emits Handle() which concurrently runs the handler then writes to the
-  // transport
-  f_service_
-      << indent() << "func (p *" << processorName
-      << ") Handle(seqId int32, oprot thrift.Protocol, locker sync.Locker, args *"
-      << argsname << ") (success bool, err thrift.Exception) {" << endl;
-  if (!tfunction->is_oneway()) {
-    f_service_ << indent() << "result := " << resultname << "{}" << endl;
-  }
-  bool need_reference = type_need_reference(tfunction->get_returntype());
-  if (!tfunction->is_oneway() && !tfunction->get_returntype()->is_void()) {
-    f_service_ << "var retval " << type_to_go_type(tfunction->get_returntype())
-               << endl;
+  t_struct* arg_struct = tfunction->get_arglist();  
+  const std::vector<t_field*>& fields = arg_struct->get_members();
+  if (!fields.empty()) {
+    f_service_ << indent() << "args := argStruct.(*" <<  argsname <<")" << endl;
   }
 
-  f_service_ << indent() << "var err2 error" << endl;
+  f_service_ << indent() << "var result " << resultname << endl;
   f_service_ << indent() << "if ";
 
   if (!tfunction->is_oneway()) {
@@ -3436,12 +3330,9 @@ void t_go_generator::generate_process_concurrent_function(
   }
 
   // Generate the function call
-  t_struct* arg_struct = tfunction->get_arglist();
-  const std::vector<t_field*>& fields = arg_struct->get_members();
-  vector<t_field*>::const_iterator f_iter;
-  f_service_ << "err2 = p.handler." << publicize(tfunction->get_name()) << "(";
+  f_service_ << "err := p.handler." << publicize(tfunction->get_name()) << "(";
   bool first = true;
-
+  vector<t_field*>::const_iterator f_iter;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
     if (first) {
       first = false;
@@ -3452,12 +3343,12 @@ void t_go_generator::generate_process_concurrent_function(
     f_service_ << "args." << publicize((*f_iter)->get_name());
   }
 
-  f_service_ << "); err2 != nil {" << endl;
+  f_service_ << "); err != nil {" << endl;
 
   t_struct* exceptions = tfunction->get_xceptions();
   const vector<t_field*>& x_fields = exceptions->get_members();
   if (!x_fields.empty()) {
-    f_service_ << indent() << "switch v := err2.(type) {" << endl;
+    f_service_ << indent() << "switch v := err.(type) {" << endl;
 
     vector<t_field*>::const_iterator xf_iter;
 
@@ -3476,26 +3367,21 @@ void t_go_generator::generate_process_concurrent_function(
         << indent()
         << "  x := thrift.NewApplicationException(thrift.INTERNAL_ERROR, "
            "\"Internal error processing "
-        << escape_string(tfunction->get_name()) << ": \" + err2.Error())"
+        << escape_string(tfunction->get_name()) << ": \" + err.Error())"
         << endl;
-    f_service_ << indent() << "  locker.Lock()" << endl;
-    f_service_ << indent() << "  defer locker.Unlock()" << endl;
-    f_service_ << indent() << "  oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.EXCEPTION, seqId)" << endl;
-    f_service_ << indent() << "  x.Write(oprot)" << endl;
-    f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
-    f_service_ << indent() << "  oprot.Flush()" << endl;
+    f_service_ << indent() << "  return x, x" << endl;
+  } else {
+    f_service_ << indent() << "  return nil, err" << endl;
   }
-
-  f_service_ << indent() << "  return true, err2" << endl;
 
   if (!x_fields.empty()) {
     f_service_ << indent() << "}" << endl;
   }
 
-  f_service_ << indent() << "}"; // closes err2 != nil
+  f_service_ << indent() << "}"; // closes err != nil
 
+  bool need_reference = type_need_reference(tfunction->get_returntype());
+  
   if (!tfunction->is_oneway()) {
     if (!tfunction->get_returntype()->is_void()) {
       f_service_ << " else {"
@@ -3507,41 +3393,12 @@ void t_go_generator::generate_process_concurrent_function(
       }
       f_service_ << "retval" << endl;
       indent_down();
-      f_service_ << "}" << endl;
+      f_service_ << indent() << "}" << endl;
     } else {
       f_service_ << endl;
     }
-    f_service_ << indent() << "locker.Lock()" << endl;
-    f_service_ << indent() << "defer locker.Unlock()" << endl;
-    f_service_ << indent() << "if err2 = oprot.WriteMessageBegin(\""
-               << escape_string(tfunction->get_name())
-               << "\", thrift.REPLY, seqId); err2 != nil {" << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent()
-               << "if err2 = result.Write(oprot); err == nil && err2 != nil {"
-               << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_
-        << indent()
-        << "if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {"
-        << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent()
-               << "if err2 = oprot.Flush(); err == nil && err2 != nil {"
-               << endl;
-    f_service_ << indent() << "  err = err2" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent() << "if err != nil {" << endl;
-    f_service_ << indent() << "  return" << endl;
-    f_service_ << indent() << "}" << endl;
-    f_service_ << indent() << "return true, err" << endl;
-  } else {
-    f_service_ << endl;
-    f_service_ << indent() << "return true, nil" << endl;
   }
+  f_service_ << indent() << "return &result, nil" << endl;
   indent_down();
   f_service_ << indent() << "}" << endl << endl;
 }

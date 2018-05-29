@@ -28,7 +28,15 @@ import (
 // ErrServerClosed is returned by the Serve methods after a call to Stop
 var ErrServerClosed = errors.New("thrift: Server closed")
 
-// SimpleServer is a simple, non-concurrent server for testing.
+// SimpleServer is a functional but unoptimized server that is easy to
+// understand.  In its accept loop, it performs an accept on an
+// underlying socket, wraps the socket in the ServerTransport, and
+// then spins up a gofunc to process requests.
+//
+// There is one gofunc per active connection that handles all requests
+// on the connection.  multiple simultaneous requests over a single
+// connection are not supported, as the per-connection gofunc reads
+// the request, processes it, and writes the response serially
 type SimpleServer struct {
 	processorFactory ProcessorFactory
 	*ServerOptions
