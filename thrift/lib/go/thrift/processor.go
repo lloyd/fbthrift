@@ -43,7 +43,7 @@ type ProcessorFunction interface {
 	// Read a serializable message from the input protocol.
 	Read(seqId int32, iprot Protocol) (Struct, Exception)
 	// Process a message handing it to the client handler.
-	Run(seqId int32, args Struct) (WritableStruct, ApplicationException)
+	Run(args Struct) (WritableStruct, ApplicationException)
 	// Write a serializable responsne
 	Write(seqId int32, result WritableStruct, oprot Protocol) Exception
 }

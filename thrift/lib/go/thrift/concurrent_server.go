@@ -163,7 +163,7 @@ func (p *ConcurrentServer) processRequests(client Transport) error {
 			}
 			go func() {
 				var result WritableStruct
-				result, err = pfunc.Run(seqId, argStruct)
+				result, err = pfunc.Run(argStruct)
 				// protect message writing
 				writeLock.Lock()
 				defer writeLock.Unlock()

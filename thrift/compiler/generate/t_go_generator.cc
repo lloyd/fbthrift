@@ -3271,7 +3271,7 @@ void t_go_generator::generate_process_function(
   f_service_ << indent() << "}" << endl;
 
   // Generate the function call
-  f_service_ << indent() << "result, err := p.Run(seqId, request)" << endl;
+  f_service_ << indent() << "result, err := p.Run(request)" << endl;
   f_service_ << indent() << "// when the client implemented handler fails, let's generate" << endl;
   f_service_ << indent() << "// a good protocol conforming error and keep the connection open" << endl;
   f_service_ << indent() << "if result == nil {" << endl;
@@ -3310,7 +3310,7 @@ void t_go_generator::generate_run_function(
   string resultname = publicize(tfunction->get_name() + "_result", true);
   f_service_
       << indent() << "func (p *" << processorName
-      << ") Run(seqId int32, argStruct thrift.Struct) "
+      << ") Run(argStruct thrift.Struct) "
       << "(thrift.WritableStruct, thrift.ApplicationException) {"
       << endl;
   indent_up();
