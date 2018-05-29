@@ -28,7 +28,7 @@ add_dependencies(thriftfrozen2 frozen-cpp2-target)
 target_link_libraries(
   thriftfrozen2
   PUBLIC
-    Folly::folly
+    folly
     ${GLOG_LIBRARIES}
     ${LIBGFLAGS_LIBRARY}
 )
@@ -50,7 +50,7 @@ target_link_libraries(
   thriftprotocol
   PUBLIC
     thrift
-    Folly::folly
+    folly
     wangle::wangle
 )
 
@@ -84,7 +84,7 @@ target_link_libraries(
   PUBLIC
     ${KRB5_LIBRARIES}
     ${Boost_LIBRARIES}
-    Folly::folly
+    folly 
     ${LIBGFLAGS_LIBRARY}
     ${GLOG_LIBRARIES}
 )

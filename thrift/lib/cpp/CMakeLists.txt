@@ -13,7 +13,7 @@ target_include_directories(
 target_link_libraries(
   thrift-core
   PUBLIC
-    Folly::folly
+    folly
 )
 
 add_library(
@@ -29,7 +29,7 @@ add_library(
 target_link_libraries(
   concurrency
   PUBLIC
-    Folly::folly
+    folly
     ${LIBGFLAGS_LIBRARY}
     ${GLOG_LIBRARIES}
 )
@@ -49,7 +49,7 @@ add_dependencies(protocol reflection-cpp2-target)
 target_link_libraries(
   protocol
   PUBLIC
-    Folly::folly
+    folly
     ${GLOG_LIBRARIES}
 )
 
@@ -77,7 +77,7 @@ target_link_libraries(
   PUBLIC
     concurrency
     thrift-core
-    Folly::folly
+    folly
     ${OPENSSL_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${ZSTD_LIBRARIES}
@@ -103,7 +103,7 @@ target_link_libraries(
     concurrency
     transport
     ${Boost_LIBRARIES}
-    Folly::folly
+    folly
     ${GLOG_LIBRARIES}
     ${OPENSSL_LIBRARIES}
 )
@@ -120,7 +120,7 @@ target_link_libraries(
     concurrency
     protocol
     transport
-    Folly::folly
+    folly
     ${GLOG_LIBRARIES}
 )
 
