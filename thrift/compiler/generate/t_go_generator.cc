@@ -3205,11 +3205,23 @@ void t_go_generator::generate_write_function(
   bool need_reference = type_need_reference(tfunction->get_returntype());
 
   f_service_ << indent() << "var err2 error" << endl;
-  f_service_ << indent() << "messageType := thrift.REPLY" << endl;  
-  f_service_ << indent() << "if _, isError := result.(thrift.ApplicationException); isError {" << endl;
-  indent_up();
-  f_service_ << indent() << "messageType = thrift.EXCEPTION" << endl;
-  indent_down();
+  f_service_ << indent() << "messageType := thrift.REPLY" << endl;
+
+  t_struct* exceptions = tfunction->get_xceptions();
+  const vector<t_field*>& x_fields = exceptions->get_members();
+  vector<t_field*>::const_iterator xf_iter;
+  f_service_ << indent() << "switch "
+             << (x_fields.empty() ? "" : "v := ")
+             << "result.(type) {" << endl;
+  for (xf_iter = x_fields.begin(); xf_iter != x_fields.end(); ++xf_iter) {
+    f_service_ << indent() << "  case "
+               << type_to_go_type(((*xf_iter)->get_type())) << ":" << endl;
+    f_service_ << indent() << "msg := " << resultname << "{ " << publicize((*xf_iter)->get_name())
+               << ": v}" << endl;
+    f_service_ << indent() << "result = &msg" << endl;
+  }
+  f_service_ << indent() << "  case thrift.ApplicationException:"<< endl;
+  f_service_ << indent() << "    messageType = thrift.EXCEPTION" << endl;
   f_service_ << indent() << "}" << endl;
 
   f_service_ << indent() << "if err2 = oprot.WriteMessageBegin(\""
@@ -3259,12 +3271,12 @@ void t_go_generator::generate_process_function(
       << ") Process(seqId int32, iprot, oprot thrift.Protocol) (bool, thrift.Exception) {"
       << endl;
   indent_up();
-  t_struct* arg_struct = tfunction->get_arglist();  
+  t_struct* arg_struct = tfunction->get_arglist();
   const std::vector<t_field*>& fields = arg_struct->get_members();
   f_service_ << indent() << "request, readErr := p.Read(seqId, iprot)" << endl;
   f_service_ << indent() << "if readErr != nil {" << endl;
   indent_up();
-  f_service_ << indent() << "// request couldn't be read.  connection should be closed" 
+  f_service_ << indent() << "// request couldn't be read.  connection should be closed"
 	     << endl;
   f_service_ << indent() << "return false, readErr" << endl;
   indent_down();
@@ -3281,18 +3293,18 @@ void t_go_generator::generate_process_function(
   f_service_ << indent() << "exc := thrift.NewApplicationException(thrift.INTERNAL_ERROR, "
 	     << "\"error processing " << escape_string(fname) << ": nil result structure\")"
 	     << endl;
-  f_service_ << indent() << "err, result = exc, exc" << endl;  
+  f_service_ << indent() << "err, result = exc, exc" << endl;
   indent_down();
-  f_service_ << indent() << "} else {" << endl;  
+  f_service_ << indent() << "} else {" << endl;
   indent_up();
   f_service_ << indent() << "result = err" << endl;
-  indent_down();  
-  f_service_ << indent() << "}" << endl;    
+  indent_down();
+  f_service_ << indent() << "}" << endl;
   indent_down();
   f_service_ << indent() << "}" << endl;
   f_service_ << indent() << "if e2 := p.Write(seqId, result, oprot); e2 != nil {" << std::endl;
   indent_up();
-  f_service_ << indent() << "return false, e2" << endl;  
+  f_service_ << indent() << "return false, e2" << endl;
   indent_down();
   f_service_ << indent() << "}" << endl;
   f_service_ << indent() << "return true, err" << endl;
@@ -3314,7 +3326,7 @@ void t_go_generator::generate_run_function(
       << "(thrift.WritableStruct, thrift.ApplicationException) {"
       << endl;
   indent_up();
-  t_struct* arg_struct = tfunction->get_arglist();  
+  t_struct* arg_struct = tfunction->get_arglist();
   const std::vector<t_field*>& fields = arg_struct->get_members();
   if (!fields.empty()) {
     f_service_ << indent() << "args := argStruct.(*" <<  argsname <<")" << endl;
@@ -3381,7 +3393,7 @@ void t_go_generator::generate_run_function(
   f_service_ << indent() << "}"; // closes err != nil
 
   bool need_reference = type_need_reference(tfunction->get_returntype());
-  
+
   if (!tfunction->is_oneway()) {
     if (!tfunction->get_returntype()->is_void()) {
       f_service_ << " else {"
