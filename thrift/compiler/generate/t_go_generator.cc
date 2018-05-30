@@ -3068,17 +3068,17 @@ void t_go_generator::generate_service_server(t_service* tservice) {
     f_service_ << indent() << "  return p.processorMap" << endl;
     f_service_ << indent() << "}" << endl << endl;
     f_service_ << indent() << "func New" << serviceName << "Processor(handler "
-               << serviceName << ") *" << serviceName << "Processor {" << endl
-               << endl;
+               << serviceName << ") *" << serviceName << "Processor {" << endl;
     f_service_
         << indent() << "  " << self << " := &" << serviceName
         << "Processor{handler:handler, "
            "processorMap:make(map[string]thrift.ProcessorFunction)}"
         << endl;
 
+    indent_up();
     for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
       string escapedFuncName(escape_string((*f_iter)->get_name()));
-      f_service_ << indent() << "  " << self << ".processorMap[\""
+      f_service_ << indent() << self << ".processorMap[\""
                  << escapedFuncName << "\"] = &" << pServiceName << "Processor"
                  << publicize((*f_iter)->get_name()) << "{handler:handler}"
                  << endl;
@@ -3086,6 +3086,7 @@ void t_go_generator::generate_service_server(t_service* tservice) {
 
     string x(tmp("x"));
     f_service_ << indent() << "return " << self << endl;
+    indent_down();
     f_service_ << indent() << "}" << endl << endl;
 
     f_service_ << indent() << "func (p *" << serviceName
@@ -3114,7 +3115,6 @@ void t_go_generator::generate_service_server(t_service* tservice) {
     f_service_ << indent() << "  oprot.WriteMessageEnd()" << endl;
     f_service_ << indent() << "  oprot.Flush()" << endl;
     f_service_ << indent() << "  return false, " << x << endl;
-    f_service_ << indent() << "" << endl;
     f_service_ << indent() << "}" << endl << endl;
   } else {
     f_service_ << indent() << "type " << serviceName << "Processor struct {"
@@ -3214,14 +3214,20 @@ void t_go_generator::generate_write_function(
              << (x_fields.empty() ? "" : "v := ")
              << "result.(type) {" << endl;
   for (xf_iter = x_fields.begin(); xf_iter != x_fields.end(); ++xf_iter) {
-    f_service_ << indent() << "  case "
-               << type_to_go_type(((*xf_iter)->get_type())) << ":" << endl;
-    f_service_ << indent() << "msg := " << resultname << "{ " << publicize((*xf_iter)->get_name())
-               << ": v}" << endl;
-    f_service_ << indent() << "result = &msg" << endl;
+    indent(f_service_) << "case "
+                       << type_to_go_type(((*xf_iter)->get_type()))
+                       << ":" << endl;
+    indent_up();
+    indent(f_service_) << "msg := " << resultname << "{"
+                       << publicize((*xf_iter)->get_name())
+                       << ": v}" << endl;
+    indent(f_service_) << "result = &msg" << endl;
+    indent_down();
   }
-  f_service_ << indent() << "  case thrift.ApplicationException:"<< endl;
-  f_service_ << indent() << "    messageType = thrift.EXCEPTION" << endl;
+  indent(f_service_) << "case thrift.ApplicationException:"<< endl;
+  indent_up();
+  indent(f_service_) << "messageType = thrift.EXCEPTION" << endl;
+  indent_down();
   f_service_ << indent() << "}" << endl;
 
   f_service_ << indent() << "if err2 = oprot.WriteMessageBegin(\""
@@ -3329,11 +3335,11 @@ void t_go_generator::generate_run_function(
   t_struct* arg_struct = tfunction->get_arglist();
   const std::vector<t_field*>& fields = arg_struct->get_members();
   if (!fields.empty()) {
-    f_service_ << indent() << "args := argStruct.(*" <<  argsname <<")" << endl;
+    indent(f_service_) << "args := argStruct.(*" <<  argsname <<")" << endl;
   }
 
-  f_service_ << indent() << "var result " << resultname << endl;
-  f_service_ << indent() << "if ";
+  indent(f_service_) << "var result " << resultname << endl;
+  indent(f_service_) << "if ";
 
   if (!tfunction->is_oneway()) {
     if (!tfunction->get_returntype()->is_void()) {
@@ -3356,7 +3362,7 @@ void t_go_generator::generate_run_function(
   }
 
   f_service_ << "); err != nil {" << endl;
-
+  indent_up();
   t_struct* exceptions = tfunction->get_xceptions();
   const vector<t_field*>& x_fields = exceptions->get_members();
   if (!x_fields.empty()) {
@@ -3365,13 +3371,15 @@ void t_go_generator::generate_run_function(
     vector<t_field*>::const_iterator xf_iter;
 
     for (xf_iter = x_fields.begin(); xf_iter != x_fields.end(); ++xf_iter) {
-      f_service_ << indent() << "  case "
-                 << type_to_go_type(((*xf_iter)->get_type())) << ":" << endl;
-      f_service_ << indent() << "result." << publicize((*xf_iter)->get_name())
+      indent(f_service_) << "case "
+                         << type_to_go_type(((*xf_iter)->get_type())) << ":" << endl;
+      indent_up();
+      indent(f_service_) << "result." << publicize((*xf_iter)->get_name())
                  << " = v" << endl;
+      indent_down();
     }
 
-    f_service_ << indent() << "  default:" << endl;
+    indent(f_service_) << "default:" << endl;
   }
 
   if (!tfunction->is_oneway()) {
@@ -3385,12 +3393,12 @@ void t_go_generator::generate_run_function(
   } else {
     f_service_ << indent() << "  return nil, err" << endl;
   }
-
   if (!x_fields.empty()) {
     f_service_ << indent() << "}" << endl;
   }
+  indent_down();
 
-  f_service_ << indent() << "}"; // closes err != nil
+  indent(f_service_) << "}"; // closes err != nil
 
   bool need_reference = type_need_reference(tfunction->get_returntype());
 
